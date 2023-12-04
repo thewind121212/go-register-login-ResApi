@@ -83,3 +83,8 @@ type EmailTemplate struct {
 	Otp             string `json:"otp"`
 	AlternativeLink string `json:"alternativeLink"`
 }
+
+type OtpGenerate struct {
+	PureOTP string
+	HashOTP string
+}
