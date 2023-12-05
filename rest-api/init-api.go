@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/gorilla/mux"
 	"linhdevtran99/rest-api/models"
+	"linhdevtran99/rest-api/rest-api/routes"
 	"linhdevtran99/rest-api/rest-api/services"
 	"linhdevtran99/rest-api/utils"
 	"log"
@@ -31,7 +32,7 @@ type ApiError struct {
 type apiFunc func(http.ResponseWriter, *http.Request) error
 
 // makeHTTPHandlerFn fn
-func makeHTTPHandlerFn(fn apiFunc) http.HandlerFunc {
+func MakeHTTPHandlerFn(fn apiFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := fn(w, r); err != nil {
 			if err := WriteJSON(w, http.StatusInternalServerError, ApiError{Error: err.Error()}); err != nil {
@@ -58,22 +59,19 @@ func startMuxServer(s *APIServer, router *mux.Router) {
 func (s *APIServer) Run() {
 	router := mux.NewRouter()
 
-	router.HandleFunc("/account/register", makeHTTPHandlerFn(s.registerNewAccount))
-	router.HandleFunc("/account", makeHTTPHandlerFn(s.handleAccount))
-	router.HandleFunc("/test", makeHTTPHandlerFn(s.testCheckUserAndPass))
+	//authRouter := router.PathPrefix("/").Subrouter()
+
+	routes.AuthRouterSetup(router)
+
+	//authRouter.HandleFunc("/account", MakeHTTPHandlerFn(s.AuthRoute))
+
+	//router.HandleFunc("/account/register", MakeHTTPHandlerFn(s.RegisterNewAccount))
+	//router.HandleFunc("/account/register", MakeHTTPHandlerFn(s.AuthRoute))
 
 	startMuxServer(s, router)
 }
 
-func (s *APIServer) registerNewAccount(w http.ResponseWriter, r *http.Request) error {
-	if r.Method == http.MethodGet {
-		fmt.Println("API Route Healthy")
-	}
-
-	return nil
-}
-
-func (s *APIServer) testCheckUserAndPass(w http.ResponseWriter, r *http.Request) error {
+func (s *APIServer) AuthRoute(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Content-Type", "application/json")
 	client := utils.MongoDB
 
