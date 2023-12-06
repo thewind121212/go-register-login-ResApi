@@ -11,6 +11,7 @@ import (
 )
 
 var MongoDB *mongo.Client
+var PreUserData *mongo.Collection
 
 func InitMongoDriver(mongoUri string) *mongo.Client {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -30,6 +31,7 @@ func InitMongoDriver(mongoUri string) *mongo.Client {
 	}
 
 	MongoDB = client
+	PreUserData = MongoDB.Database("Totoday-shop").Collection("preusers")
 
 	return client
 }

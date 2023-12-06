@@ -3,9 +3,13 @@ package rest_api
 import (
 	"fmt"
 	"github.com/gorilla/mux"
+	"linhdevtran99/rest-api/models"
 	"linhdevtran99/rest-api/rest-api/routes"
+	"linhdevtran99/rest-api/rest-api/services"
+	"linhdevtran99/rest-api/utils"
 	"log"
 	"net/http"
+	"time"
 )
 
 type APIServer struct {
@@ -30,11 +34,13 @@ func (s *APIServer) Run() {
 	router := mux.NewRouter()
 
 	routes.AuthRouterSetup(router)
+
+	router.HandleFunc("/test", utils.MakeHTTPHandlerFn(s.TestRoute))
+
 	startMuxServer(s, router)
 }
 
-func (s *APIServer) AuthRoute(w http.ResponseWriter, r *http.Request) error {
-	w.Header().Set("Content-Type", "application/json")
+func (s *APIServer) TestRoute(w http.ResponseWriter, r *http.Request) error {
 
 	if r.Method == http.MethodGet {
 		fmt.Println("hit")
@@ -56,23 +62,29 @@ func (s *APIServer) AuthRoute(w http.ResponseWriter, r *http.Request) error {
 		//}
 
 		//serect := os.Getenv("EMAIL_VERIFY_SECRET")
-		//isPass, _ := generatorOtp("hello", "nhocdl.poro1@gmail.com", 12, serect)
-		//fmt.Println(isPass)
-		//cipherBase64 := createLinkVerify(&models.CreateUser{
-		//	Username:        "thewind121212",
-		//	Email:           "nhocdl.poro1@gmail.com",
-		//	Password:        "linhporoQ1@",
-		//	ConfirmPassword: "linhporoQ1@",
-		//}, serect)
+
+		//_, otp := services.GeneratorOtp("hello", "nhocdl.poro1@gmail.com", 12, serect)
+		//fmt.Println(otp.HashOTP)
+		//fmt.Println(otp.PureOTP)
+
+		//utils.EncryptAESMailLink("nhocdl.poro2@gmail.com", serect, w)
+
+		//jsonData, _ := json.Marshal(map[string]string{"email": "nhocdl.poro1@gmail.com", "user": "thewind121212"})
+		////
+		//utils.Redis.Set(context.Background(), "otp:nhocdl.poro1@gmail.com", string(jsonData), time.Minute)
 		//
-		//key := []byte(serect)
+		//utils.CheckAndWriteRedis("nhocdl.poro1@gmail.com", "thewind121212", "lasdjflasdjlfj")
+
+		services.CheckAndWritePreuser(&models.PreusersMongo{
+			Username:        "thewind121212",
+			Email:           "nhocdl.poro2@gmail.com",
+			PhoneNumber:     "0918327132",
+			VerifySentCount: 0,
+			CreatedDate:     time.Now(),
+			UpdateDate:      time.Now(),
+		})
+
 		//
-		//i, err := utils.DecryptAES(cipherBase64, key)
-		//if err != nil {
-		//	return err
-		//}
-		//
-		//fmt.Println(string(i))
 
 	}
 

@@ -16,6 +16,7 @@ type PreusersMongo struct {
 	HashPassword    string             `bson:"hash_password" json:"hash_password"`
 	PhoneNumber     string             `bson:"phone_number" json:"phone_number"`
 	CreatedDate     time.Time          `bson:"created_date" json:"created_date"`
+	UpdateDate      time.Time          `bson:"update_date" json:"update_date"`
 	VerifySentCount int                `bson:"verify_sent_count" json:"verify_sent_count"`
 }
 
@@ -27,6 +28,7 @@ type UsersMongo struct {
 	PhoneNumber     string             `bson:"phone_number" json:"phone_number"`
 	Active          bool               `bson:"active" json:"active"`
 	CreatedDate     time.Time          `bson:"created_date" json:"created_date"`
+	UpdateDate      time.Time          `bson:"update_date" json:"update_date"`
 	VerifySentCount int                `bson:"verify_sent_count" json:"verify_sent_count"`
 }
 
