@@ -2,19 +2,20 @@ package services
 
 import (
 	"context"
-	"encoding/base32"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-mail/mail"
 	"github.com/go-playground/validator/v10"
-	"github.com/pquerna/otp"
-	"github.com/pquerna/otp/hotp"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
 	"golang.org/x/crypto/bcrypt"
 	"linhdevtran99/rest-api/models"
 	"linhdevtran99/rest-api/utils"
+	"log"
 	"net/http"
+	"os"
+	"sync"
 	"time"
 )
 
@@ -68,7 +69,7 @@ func CheckAndValidRegisterFiled(registerData *models.CreateUser) (bool, *Respons
 }
 
 // CheckAccountExist Checking in db is user input same data in
-func CheckAccountExist(mongoClient *mongo.Client, userName string, email string) (bool, *ResponseError) {
+func CheckAccountExist(userName string, email string) (bool, *ResponseError) {
 	//filter in mongodb
 	var isValid bool
 	var errAPI *ResponseError
@@ -80,7 +81,7 @@ func CheckAccountExist(mongoClient *mongo.Client, userName string, email string)
 		}},
 	}
 
-	_, err := utils.PreUserData.FindOne(context.TODO(), filter).Raw()
+	_, err := utils.User.FindOne(context.TODO(), filter).Raw()
 	if err != nil {
 		isValid = true
 		errAPI = nil
@@ -96,55 +97,89 @@ func CheckAccountExist(mongoClient *mongo.Client, userName string, email string)
 	return isValid, errAPI
 }
 
-// GeneratorOtp Generate HOtp for confirm information
+// GeneratorOtp Generate OTP Verify Link and Qr Link
 
-func GeneratorOtp(userName string, email string, counter uint64, serect string) (bool, *models.OtpGenerate) {
+const (
+	otpDigits     = 6
+	mailValidTime = time.Hour * 24
+)
 
-	serectBase32 := base32.StdEncoding.EncodeToString([]byte(serect + userName + email))
-	passCode, err := hotp.GenerateCodeCustom(serectBase32, counter, hotp.ValidateOpts{
-		Digits:    6,
-		Algorithm: otp.AlgorithmSHA256,
-	})
+func GenerateVerifyAccount(registerInfo *models.PreusersMongo, w http.ResponseWriter) {
+	var wg sync.WaitGroup
 
-	if err != nil {
-		fmt.Println("Fail to create OTP")
-		return false, nil
-	}
+	otpChannel := make(chan models.OtpGenerate, 1)
+	mailChannel := make(chan models.MailVefiry, 1)
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(passCode), 5)
-	if err != nil {
-		fmt.Println("Fail to create OTP")
-		return false, nil
-	}
+	counter := CheckAndWritePreuser(registerInfo, w)
+	wg.Add(1)
+	go utils.GenOTP(registerInfo, counter, otpDigits, w, otpChannel, &wg)
+	wg.Add(1)
+	go utils.EncryptAESMailLink(registerInfo, w, mailChannel, &wg)
+	go createMailVerify(registerInfo, otpChannel, mailChannel, w)
+	go writeOTPInRedis(registerInfo, otpChannel, w)
 
-	return true, &models.OtpGenerate{
-		PureOTP: passCode,
-		HashOTP: string(hashed),
-	}
+	wg.Wait()
+
 }
 
 // CreateLinkVerify Create a alternative verify link
-func CreateLinkVerify(registerInfo string, secrect string) string {
-	return "linh"
+func createMailVerify(registerInfo *models.PreusersMongo, otpChan chan models.OtpGenerate, mailChan chan models.MailVefiry, w http.ResponseWriter) {
+	smtpPass := os.Getenv("SMTP_PASS")
+	m := mail.NewMessage()
 
+	opt := <-otpChan
+	mailVerify := <-mailChan
+
+	decodedImage, err := base64.StdEncoding.DecodeString(mailVerify.ImageBase64)
+	if err != nil {
+		log.Println("Error decoding base64 image:", err)
+	}
+
+	qrFileName := registerInfo.Email + registerInfo.Username + ".png"
+	os.WriteFile("./temp/"+qrFileName, decodedImage, 0666)
+	emailBody := utils.BuildEmail(opt.PureOTP, mailVerify.LinkMail, qrFileName)
+
+	m.SetHeader("From", "kotomi.poro1@gmail.com")
+	m.SetHeader("To", registerInfo.Email)
+	m.SetHeader("Subject", "Thanks For Join My Business")
+	m.SetBody("text/html", emailBody)
+	m.Embed("./temp/" + qrFileName)
+
+	d := mail.NewDialer("smtp.gmail.com", 587, "kotomi.poro1@gmail.com", smtpPass)
+	d.StartTLSPolicy = mail.MandatoryStartTLS
+
+	// Send the email to Bob, Cora and Dan.
+	if err := d.DialAndSend(m); err != nil {
+		fmt.Println("Internal Log: Fail to send email check smtp")
+		_ = utils.WriteJSONInternalError(w, "Fail to send email check smtp")
+		panic(err)
+	}
+
+	defer func() {
+		os.Remove("./temp/" + qrFileName)
+	}()
 }
 
 // check and write pre use into mongo db
-func CheckAndWritePreuser(registerInfo *models.PreusersMongo) {
+func CheckAndWritePreuser(registerInfo *models.PreusersMongo, w http.ResponseWriter) uint64 {
 	//checking
 	email := registerInfo.Email
+	count := 1
 	filter := bson.D{{"email", email}}
-	_, err := utils.PreUserData.FindOne(context.Background(), filter).Raw()
+	raw, err := utils.PreUserData.FindOne(context.Background(), filter).Raw()
 	if err != nil {
 		hashed, err := bcrypt.GenerateFromPassword([]byte(registerInfo.HashPassword), 10)
 		if err != nil {
-			fmt.Println("Fail to create OTP")
+			fmt.Println("Internal Log :Fail to create OTP")
+			_ = utils.WriteJSONInternalError(w, "Fail to create OTP")
 		}
 		registerInfo.HashPassword = string(hashed)
 		_, err = utils.PreUserData.InsertOne(context.Background(), registerInfo)
 		if err != nil {
-			fmt.Println("Something Went Wrong")
+			fmt.Println("Internal Log: Can't Insert Data To PreUser")
+			_ = utils.WriteJSONInternalError(w, "Can't Insert Data To PreUser")
 		}
+		return uint64(count)
 	} else {
 		update := bson.D{
 			{"$inc", bson.D{
@@ -157,9 +192,36 @@ func CheckAndWritePreuser(registerInfo *models.PreusersMongo) {
 
 		_, err := utils.PreUserData.UpdateOne(context.Background(), filter, update)
 		if err != nil {
-			fmt.Println("Internal log: update document fail")
+			fmt.Println("Internal log: Update document fail")
+			_ = utils.WriteJSONInternalError(w, "Update document fail")
 		}
-
+		fmt.Println()
+		count = int(raw.Lookup("verify_sent_count").Int32() + 1)
+		return uint64(count)
 	}
+
+}
+
+//write otp in redis for valid if otp expired
+
+func writeOTPInRedis(registerInfo *models.PreusersMongo, otpChan chan models.OtpGenerate, w http.ResponseWriter) {
+
+	otp := <-otpChan
+
+	data := map[string]string{
+		"email":       registerInfo.Email,
+		"user":        registerInfo.Username,
+		"create_date": registerInfo.CreatedDate.String(),
+		"hashOTP":     otp.HashOTP,
+	}
+
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		fmt.Println("Internal log: Can't stringfy json data")
+		_ = utils.WriteJSONInternalError(w, "Can't stringfy json data")
+	}
+	status := utils.Redis.Set(context.Background(), "otp:nhocdl.poro1@gmail.com", string(jsonData), time.Minute*2)
+
+	fmt.Println(status.Err())
 
 }

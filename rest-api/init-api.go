@@ -5,7 +5,6 @@ import (
 	"github.com/gorilla/mux"
 	"linhdevtran99/rest-api/models"
 	"linhdevtran99/rest-api/rest-api/routes"
-	"linhdevtran99/rest-api/rest-api/services"
 	"linhdevtran99/rest-api/utils"
 	"log"
 	"net/http"
@@ -45,22 +44,6 @@ func (s *APIServer) TestRoute(w http.ResponseWriter, r *http.Request) error {
 	if r.Method == http.MethodGet {
 		fmt.Println("hit")
 
-		//m := mail.NewMessage()
-		//
-		//emailBody := utils.BuildEmail()
-		//m.SetHeader("From", "kotomi.poro1@gmail.com")
-		//m.SetHeader("To", "nhocdl.poro1@gmail.com")
-		//m.SetHeader("Subject", "Hello!")
-		//m.SetBody("text/html", emailBody)
-		//
-		//d := mail.NewDialer("smtp.gmail.com", 587, "kotomi.poro1@gmail.com", "btmpjudzebyspfxw")
-		//d.StartTLSPolicy = mail.MandatoryStartTLS
-		//
-		//// Send the email to Bob, Cora and Dan.
-		//if err := d.DialAndSend(m); err != nil {
-		//	panic(err)
-		//}
-
 		//serect := os.Getenv("EMAIL_VERIFY_SECRET")
 
 		//_, otp := services.GeneratorOtp("hello", "nhocdl.poro1@gmail.com", 12, serect)
@@ -68,23 +51,19 @@ func (s *APIServer) TestRoute(w http.ResponseWriter, r *http.Request) error {
 		//fmt.Println(otp.PureOTP)
 
 		//utils.EncryptAESMailLink("nhocdl.poro2@gmail.com", serect, w)
-
-		//jsonData, _ := json.Marshal(map[string]string{"email": "nhocdl.poro1@gmail.com", "user": "thewind121212"})
-		////
-		//utils.Redis.Set(context.Background(), "otp:nhocdl.poro1@gmail.com", string(jsonData), time.Minute)
-		//
-		//utils.CheckAndWriteRedis("nhocdl.poro1@gmail.com", "thewind121212", "lasdjflasdjlfj")
-
-		services.CheckAndWritePreuser(&models.PreusersMongo{
+		preUserData := &models.PreusersMongo{
 			Username:        "thewind121212",
-			Email:           "nhocdl.poro2@gmail.com",
+			Email:           "nhocdl.poro1@gmail.com",
 			PhoneNumber:     "0918327132",
-			VerifySentCount: 0,
+			HashPassword:    "it ok now ",
 			CreatedDate:     time.Now(),
 			UpdateDate:      time.Now(),
-		})
+			VerifySentCount: 1,
+		}
 
-		//
+		_ = preUserData
+
+		//services.WriteOTPInRedis(preUserData, "tranduy linh ", w)
 
 	}
 

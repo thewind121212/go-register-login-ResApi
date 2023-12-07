@@ -7,13 +7,17 @@ import (
 	"linhdevtran99/rest-api/models"
 )
 
-func BuildEmail() string {
+func BuildEmail(otp string, mailLink string, fileName string) string {
+
+	qrcodeURL := template.URL("cid:" + fileName)
 
 	data := models.EmailTemplate{
-		Otp:             "11017",
-		AlternativeLink: "https://www.google.com.vn",
+		Otp:             otp,
+		AlternativeLink: mailLink,
+		QrCode:          qrcodeURL,
 	}
 
+	//tmpl, err := template.ParseFiles("./Template/email.html")
 	tmpl, err := template.ParseFiles("./Template/email.html")
 
 	if err != nil {

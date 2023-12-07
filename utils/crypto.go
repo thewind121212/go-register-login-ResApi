@@ -1,14 +1,25 @@
 package utils
 
 import (
+	"encoding/base32"
 	"encoding/base64"
 	"fmt"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/pquerna/otp"
+	"github.com/pquerna/otp/hotp"
 	"github.com/skip2/go-qrcode"
+	"golang.org/x/crypto/bcrypt"
+	"linhdevtran99/rest-api/models"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
 	"time"
 )
+
+//const
+
+var serect = os.Getenv("EMAIL_VERIFY_SECRET")
 
 //Mail
 
@@ -20,21 +31,19 @@ type MyCustomClaims struct {
 func buildTokenLink(token string, w http.ResponseWriter) (string, string) {
 	tokenCustomTrim := strings.ReplaceAll(token, ".", "&")
 	emailVerifyLink := "http://www.totoday.com/?p=" + tokenCustomTrim
-	fmt.Println(emailVerifyLink)
 	png, err := qrcode.Encode(emailVerifyLink, qrcode.Low, 200)
 	if err != nil {
 		fmt.Println("Internal log: error create qr ")
 		_ = WriteJSONInternalError(w, "error create QR code")
 	}
 	base64Image := base64.StdEncoding.EncodeToString(png)
-	dataURL := "data:image/png;base64," + base64Image
 
-	return emailVerifyLink, dataURL
+	return emailVerifyLink, base64Image
 }
 
-func EncryptAESMailLink(data string, key string, w http.ResponseWriter) (string, string) {
+func EncryptAESMailLink(registerInfo *models.PreusersMongo, w http.ResponseWriter, mailChan chan models.MailVefiry, wg *sync.WaitGroup) chan models.MailVefiry {
 	claims := MyCustomClaims{
-		data,
+		registerInfo.Email,
 		jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -46,13 +55,24 @@ func EncryptAESMailLink(data string, key string, w http.ResponseWriter) (string,
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	token.Header["purpose"] = "Email_Verify"
 
-	tokenString, err := token.SignedString([]byte(key))
+	tokenString, err := token.SignedString([]byte(serect))
 	if err != nil {
 		fmt.Println("Internal Log: Error signed token fail", err.Error())
 		_ = WriteJSONInternalError(w, "Error signing token fail")
 	}
 
-	return buildTokenLink(tokenString, w)
+	linkMail, imageB64 := buildTokenLink(tokenString, w)
+
+	data := models.MailVefiry{
+		LinkMail:    linkMail,
+		ImageBase64: imageB64,
+	}
+
+	mailChan <- data
+
+	wg.Done()
+	return mailChan
+
 }
 
 //
@@ -60,24 +80,34 @@ func EncryptAESMailLink(data string, key string, w http.ResponseWriter) (string,
 //}
 
 //OTP
-//Write preuser to mongo db
 
-//func WriteToMongo(registerInfo *models.PreusersMongo) {
-//
-//
-//}
+func GenOTP(registerInfo *models.PreusersMongo, counter uint64, otpDigits int, w http.ResponseWriter, otpChan chan models.OtpGenerate, wg *sync.WaitGroup) chan models.OtpGenerate {
 
-//Write otp to redis
+	serectBase32 := base32.StdEncoding.EncodeToString([]byte(serect + registerInfo.Username + registerInfo.Email))
+	passCode, err := hotp.GenerateCodeCustom(serectBase32, counter, hotp.ValidateOpts{
+		Digits:    otp.Digits(otpDigits),
+		Algorithm: otp.AlgorithmSHA256,
+	})
 
-//func CheckAndWriteRedis(email string, username string, hashOTP string) {
-//	//checking does it valid or have in redis or not
-//	//var count int
-//	exists, err := Redis.Exists(context.Background(), "otp:nhocdl.poro1@gmail.com").Result()
-//	if err != nil {
-//		fmt.Println("something went wrong")
-//	}
-//	if exists == 0 {
-//		//count = 0
-//
-//	}
-//}
+	if err != nil {
+		fmt.Println("Internal log: Fail to create OTP")
+		_ = WriteJSONInternalError(w, "Fail to create OTP")
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(passCode), 5)
+	if err != nil {
+		fmt.Println("Internal log: Fail to encrypt OTP")
+		_ = WriteJSONInternalError(w, "Fail to encrypt OTP")
+	}
+
+	data := models.OtpGenerate{
+		PureOTP: passCode,
+		HashOTP: string(hashed),
+	}
+
+	otpChan <- data
+	otpChan <- data
+	wg.Done()
+	return otpChan
+
+}

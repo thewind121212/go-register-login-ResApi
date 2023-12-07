@@ -3,6 +3,7 @@ package models
 import (
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"html/template"
 	"strings"
 	"time"
 	"unicode"
@@ -81,12 +82,18 @@ func PasswordValidator(fl validator.FieldLevel) bool {
 
 //Interal Type
 
-type EmailTemplate struct {
-	Otp             string `json:"otp"`
-	AlternativeLink string `json:"alternativeLink"`
-}
-
 type OtpGenerate struct {
 	PureOTP string
 	HashOTP string
+}
+
+type MailVefiry struct {
+	LinkMail    string
+	ImageBase64 string
+}
+
+type EmailTemplate struct {
+	Otp             string `json:"otp"`
+	AlternativeLink string `json:"alternativeLink"`
+	QrCode          template.URL
 }

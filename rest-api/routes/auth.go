@@ -21,7 +21,7 @@ func RegisterNewAccount(w http.ResponseWriter, r *http.Request) error {
 			return utils.WriteJSON(w, responseAPI.Code, responseAPI.Err.Error())
 		}
 		//call function check data user use in past or not
-		isValidData, responseAPI := services.CheckAccountExist(utils.MongoDB, registerInfo.Username, registerInfo.Email)
+		isValidData, responseAPI := services.CheckAccountExist(registerInfo.Username, registerInfo.Email)
 		if responseAPI != nil {
 			return utils.WriteJSON(w, responseAPI.Code, responseAPI.Err.Error())
 		}
@@ -36,7 +36,7 @@ func RegisterNewAccount(w http.ResponseWriter, r *http.Request) error {
 			VerifySentCount: 1,
 		}
 
-		services.CheckAndWritePreuser(preUserData)
+		services.GenerateVerifyAccount(preUserData, w)
 
 		//debug
 		if isValidData == true || validRegisterInfo == true {
