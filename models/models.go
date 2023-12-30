@@ -97,3 +97,10 @@ type EmailTemplate struct {
 	AlternativeLink string `json:"alternativeLink"`
 	QrCode          template.URL
 }
+
+type RedisOTP struct {
+	Email       string `json:"email"`
+	User        string `json:"user"`
+	CreatedDate int64  `json:"created_date"`
+	HashOTP     string `json:"hashOTP"`
+}

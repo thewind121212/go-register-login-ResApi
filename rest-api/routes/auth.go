@@ -2,6 +2,7 @@ package routes
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/gorilla/mux"
 	"linhdevtran99/rest-api/models"
 	"linhdevtran99/rest-api/rest-api/services"
@@ -15,14 +16,25 @@ func RegisterNewAccount(w http.ResponseWriter, r *http.Request) error {
 		var registerInfo models.CreateUser
 
 		_ = json.NewDecoder(r.Body).Decode(&registerInfo)
+		//[ok]
+
 		//call function check info user type in
 		validRegisterInfo, responseAPI := services.CheckAndValidRegisterFiled(&registerInfo)
+		//[fairy ok]
+
 		if responseAPI != nil {
 			return utils.WriteJSON(w, responseAPI.Code, responseAPI.Err.Error())
 		}
+
+		fmt.Println(validRegisterInfo)
+
 		//call function check data user use in past or not
-		isValidData, responseAPI := services.CheckAccountExist(registerInfo.Username, registerInfo.Email)
-		if responseAPI != nil {
+
+		isValidData, responseAPI := services.CheckAccountValid(registerInfo.Username, registerInfo.Email)
+
+		fmt.Println(isValidData)
+
+		if isValidData != true {
 			return utils.WriteJSON(w, responseAPI.Code, responseAPI.Err.Error())
 		}
 
@@ -39,10 +51,21 @@ func RegisterNewAccount(w http.ResponseWriter, r *http.Request) error {
 		services.GenerateVerifyAccount(preUserData, w)
 
 		//debug
-		if isValidData == true || validRegisterInfo == true {
-			return utils.WriteJSON(w, http.StatusOK, "USER HAVE VALID INFO FOR REGISTER ACCOUNT")
-		}
+		//if isValidData == true || validRegisterInfo == true {
+		//	return utils.WriteJSON(w, http.StatusOK, "USER HAVE VALID INFO FOR REGISTER ACCOUNT")
+		//}
 		//debug
+
+	}
+	return nil
+}
+
+func Linh(w http.ResponseWriter, r *http.Request) error {
+	if r.Method == http.MethodGet {
+		var registerInfo models.CreateUser
+
+		_ = json.NewDecoder(r.Body).Decode(&registerInfo)
+		fmt.Println(registerInfo)
 
 	}
 	return nil

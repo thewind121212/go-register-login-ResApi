@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -69,10 +70,11 @@ func CheckAndValidRegisterFiled(registerData *models.CreateUser) (bool, *Respons
 }
 
 // CheckAccountExist Checking in db is user input same data in
-func CheckAccountExist(userName string, email string) (bool, *ResponseError) {
+func CheckAccountValid(userName string, email string) (bool, *ResponseError) {
 	//filter in mongodb
 	var isValid bool
 	var errAPI *ResponseError
+	var dataRedisRetrive models.RedisOTP
 
 	filter := bson.D{
 		{"$or", bson.A{
@@ -92,6 +94,23 @@ func CheckAccountExist(userName string, email string) (bool, *ResponseError) {
 			Code: http.StatusBadRequest,
 			Err:  errors.New("your username or email had been register before"),
 		}
+	}
+	retrievedValue, err := utils.Redis.Get(context.Background(), "otp:"+email).Result()
+	err = json.Unmarshal([]byte(retrievedValue), &dataRedisRetrive)
+	if err != nil {
+		fmt.Println("Internal Log: Can't get data from redis")
+	}
+
+	timeDiff := time.Now().Unix() - dataRedisRetrive.CreatedDate
+
+	if timeDiff < 30 {
+		isValid = false
+		fmt.Println("Internal Log: Rate limit send verify mail")
+		errAPI = &ResponseError{
+			Code: http.StatusBadRequest,
+			Err:  errors.New("wait " + strconv.FormatInt(30-timeDiff, 10) + " to send verify mail again"),
+		}
+
 	}
 
 	return isValid, errAPI
@@ -139,13 +158,13 @@ func createMailVerify(registerInfo *models.PreusersMongo, otpChan chan models.Ot
 	os.WriteFile("./temp/"+qrFileName, decodedImage, 0666)
 	emailBody := utils.BuildEmail(opt.PureOTP, mailVerify.LinkMail, qrFileName)
 
-	m.SetHeader("From", "kotomi.poro1@gmail.com")
+	m.SetHeader("From", "admin@wliafdew.dev")
 	m.SetHeader("To", registerInfo.Email)
 	m.SetHeader("Subject", "Thanks For Join My Business")
 	m.SetBody("text/html", emailBody)
 	m.Embed("./temp/" + qrFileName)
 
-	d := mail.NewDialer("smtp.gmail.com", 587, "kotomi.poro1@gmail.com", smtpPass)
+	d := mail.NewDialer("mail.wliafdew.dev", 465, "admin@wliafdew.dev", smtpPass)
 	d.StartTLSPolicy = mail.MandatoryStartTLS
 
 	// Send the email to Bob, Cora and Dan.
@@ -208,19 +227,19 @@ func writeOTPInRedis(registerInfo *models.PreusersMongo, otpChan chan models.Otp
 
 	otp := <-otpChan
 
-	data := map[string]string{
-		"email":       registerInfo.Email,
-		"user":        registerInfo.Username,
-		"create_date": registerInfo.CreatedDate.String(),
-		"hashOTP":     otp.HashOTP,
+	dataRedis := &models.RedisOTP{
+		Email:       registerInfo.Email,
+		User:        registerInfo.Username,
+		CreatedDate: registerInfo.CreatedDate.Unix(),
+		HashOTP:     otp.HashOTP,
 	}
 
-	jsonData, err := json.Marshal(data)
+	jsonData, err := json.Marshal(dataRedis)
 	if err != nil {
 		fmt.Println("Internal log: Can't stringfy json data")
 		_ = utils.WriteJSONInternalError(w, "Can't stringfy json data")
 	}
-	status := utils.Redis.Set(context.Background(), "otp:nhocdl.poro1@gmail.com", string(jsonData), time.Minute*2)
+	status := utils.Redis.Set(context.Background(), "otp:"+registerInfo.Email, string(jsonData), time.Hour*24)
 
 	fmt.Println(status.Err())
 

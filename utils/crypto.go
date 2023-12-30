@@ -30,7 +30,7 @@ type MyCustomClaims struct {
 
 func buildTokenLink(token string, w http.ResponseWriter) (string, string) {
 	tokenCustomTrim := strings.ReplaceAll(token, ".", "&")
-	emailVerifyLink := "http://www.totoday.com/?p=" + tokenCustomTrim
+	emailVerifyLink := "https://api.wliafdew.dev/?p=" + tokenCustomTrim
 	png, err := qrcode.Encode(emailVerifyLink, qrcode.Low, 200)
 	if err != nil {
 		fmt.Println("Internal log: error create qr ")
@@ -79,7 +79,7 @@ func EncryptAESMailLink(registerInfo *models.PreusersMongo, w http.ResponseWrite
 //func DecryptAESMailLink(data string, key string) string {
 //}
 
-//OTP
+//OTP+++++++++++++OTP//
 
 func GenOTP(registerInfo *models.PreusersMongo, counter uint64, otpDigits int, w http.ResponseWriter, otpChan chan models.OtpGenerate, wg *sync.WaitGroup) chan models.OtpGenerate {
 

@@ -27,7 +27,6 @@ func BuildEmail(otp string, mailLink string, fileName string) string {
 	var result bytes.Buffer
 	_ = tmpl.Execute(&result, data)
 
-	fmt.Println(result.String())
 	return result.String()
 
 }
