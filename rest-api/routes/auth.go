@@ -43,6 +43,7 @@ func RegisterNewAccount(w http.ResponseWriter, r *http.Request) error {
 			Email:           registerInfo.Email,
 			PhoneNumber:     registerInfo.PhoneNumber,
 			HashPassword:    registerInfo.Password,
+			UUID:            registerInfo.UUID,
 			CreatedDate:     time.Now(),
 			UpdateDate:      time.Now(),
 			VerifySentCount: 1,
@@ -60,12 +61,15 @@ func RegisterNewAccount(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func Linh(w http.ResponseWriter, r *http.Request) error {
-	if r.Method == http.MethodGet {
-		var registerInfo models.CreateUser
+func VerifyWithOTP(w http.ResponseWriter, r *http.Request) error {
 
-		_ = json.NewDecoder(r.Body).Decode(&registerInfo)
-		fmt.Println(registerInfo)
+	if r.Method == http.MethodPost {
+		// declare variable
+		var otpInfo models.OTPVerify
+		//get data from body
+		_ = json.NewDecoder(r.Body).Decode(&otpInfo)
+		//check otp and create user
+		services.CheckOTPIsValid(&otpInfo, w)
 
 	}
 	return nil
@@ -74,4 +78,5 @@ func Linh(w http.ResponseWriter, r *http.Request) error {
 func AuthRouterSetup(router *mux.Router) {
 	authRouter := router.PathPrefix("/account").Subrouter()
 	authRouter.Handle("/register", utils.MakeHTTPHandlerFn(RegisterNewAccount)).Methods("POST")
+	authRouter.Handle("/register/verifyAccountOTP", utils.MakeHTTPHandlerFn(VerifyWithOTP)).Methods("POST")
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/go-mail/mail"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"golang.org/x/crypto/bcrypt"
 	"linhdevtran99/rest-api/models"
@@ -120,10 +121,10 @@ func CheckAccountValid(userName string, email string) (bool, *ResponseError) {
 
 const (
 	otpDigits     = 6
-	mailValidTime = time.Hour * 24
+	mailValidTime = time.Minute * 15
 )
 
-func GenerateVerifyAccount(registerInfo *models.PreusersMongo, w http.ResponseWriter) {
+func GenerateVerifyAccount(registerInfo *models.PreusersMongo, w http.ResponseWriter) error {
 	var wg sync.WaitGroup
 
 	otpChannel := make(chan models.OtpGenerate, 1)
@@ -135,9 +136,11 @@ func GenerateVerifyAccount(registerInfo *models.PreusersMongo, w http.ResponseWr
 	wg.Add(1)
 	go utils.EncryptAESMailLink(registerInfo, w, mailChannel, &wg)
 	go createMailVerify(registerInfo, otpChannel, mailChannel, w)
-	go writeOTPInRedis(registerInfo, otpChannel, w)
+	go writeOTPInRedis(counter, registerInfo, otpChannel, w)
 
 	wg.Wait()
+	err := utils.WriteJSON(w, http.StatusOK, "Success register account please verify your account")
+	return err
 
 }
 
@@ -223,7 +226,7 @@ func CheckAndWritePreuser(registerInfo *models.PreusersMongo, w http.ResponseWri
 
 //write otp in redis for valid if otp expired
 
-func writeOTPInRedis(registerInfo *models.PreusersMongo, otpChan chan models.OtpGenerate, w http.ResponseWriter) {
+func writeOTPInRedis(counter uint64, registerInfo *models.PreusersMongo, otpChan chan models.OtpGenerate, w http.ResponseWriter) {
 
 	otp := <-otpChan
 
@@ -232,6 +235,7 @@ func writeOTPInRedis(registerInfo *models.PreusersMongo, otpChan chan models.Otp
 		User:        registerInfo.Username,
 		CreatedDate: registerInfo.CreatedDate.Unix(),
 		HashOTP:     otp.HashOTP,
+		Counter:     counter,
 	}
 
 	jsonData, err := json.Marshal(dataRedis)
@@ -243,4 +247,97 @@ func writeOTPInRedis(registerInfo *models.PreusersMongo, otpChan chan models.Otp
 
 	fmt.Println(status.Err())
 
+}
+
+// ////////////////////////Create User Complete//////////////////////////
+func CreateUserAfterVerify(otpInfo *models.OTPVerify, redis *models.RedisOTP, w http.ResponseWriter) bool {
+	isValid := true
+	var preUserData models.PreusersMongo
+	filter := bson.D{{"email", otpInfo.Email}}
+	err := utils.PreUserData.FindOne(context.Background(), filter).Decode(&preUserData)
+
+	if err != nil {
+		fmt.Println("Internal log: Can't get preuser data")
+		_ = utils.WriteJSONInternalError(w, "Please register again")
+		isValid = false
+	}
+
+	user := models.UsersMongo{
+		Username:        preUserData.Username,
+		Email:           preUserData.Email,
+		PhoneNumber:     preUserData.PhoneNumber,
+		HashPassword:    preUserData.HashPassword,
+		Active:          true,
+		CreatedDate:     time.Now(),
+		UpdateDate:      time.Now(),
+		VerifySentCount: int(redis.Counter),
+	}
+
+	_, err = utils.User.InsertOne(context.Background(), user)
+
+	if err != nil {
+		fmt.Println("Internal log: Can't insert user data")
+		_ = utils.WriteJSONInternalError(w, "Can't insert user data")
+		isValid = false
+	}
+
+	if isValid == true {
+		fmt.Println("Internal log: Success verify account")
+		_ = utils.WriteJSON(w, http.StatusOK, "Success verify account")
+	}
+
+	return isValid
+
+}
+
+//////////////////////////Verify OTP//////////////////////////
+
+func CheckUserVerify(otpInfo *models.OTPVerify, w http.ResponseWriter) bool {
+	isVerified := false
+	filter := bson.D{{"email", otpInfo.Email}}
+	var user models.UsersMongo
+	_ = utils.User.FindOne(context.Background(), filter).Decode(&user)
+
+	if user.Active == true {
+		fmt.Println("Internal log: Account already verify")
+		_ = utils.WriteJSON(w, http.StatusBadRequest, "Account already verify")
+		isVerified = true
+	}
+
+	return isVerified
+
+}
+
+func CheckOTPIsValid(otpInfo *models.OTPVerify, w http.ResponseWriter) bool {
+	var isValid bool
+	isValid = true
+	//get data from redis
+	var dataRedis models.RedisOTP
+	//verify uuid and email
+	value, err := utils.Redis.Get(context.Background(), "otp:"+otpInfo.Email).Result()
+	if err != nil {
+		fmt.Println("Internal log: Email not valid")
+		_ = utils.WriteJSON(w, http.StatusBadRequest, "Email is not valid")
+		isValid = false
+		return false
+	}
+
+	_ = json.Unmarshal([]byte(value), &dataRedis)
+	_, err = uuid.Parse(otpInfo.UUID)
+	if err != nil {
+		fmt.Println("Internal log: UUID not valid")
+		_ = utils.WriteJSON(w, http.StatusBadRequest, "UUID not valid")
+		isValid = false
+	}
+
+	if isVerified := CheckUserVerify(otpInfo, w); isVerified == true {
+		return false
+	}
+
+	isValid = utils.VerifyOTP(otpInfo, dataRedis, w)
+
+	if isValid == true {
+		CreateUserAfterVerify(otpInfo, &dataRedis, w)
+	}
+	return true
 }

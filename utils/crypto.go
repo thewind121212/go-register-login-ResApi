@@ -81,9 +81,10 @@ func EncryptAESMailLink(registerInfo *models.PreusersMongo, w http.ResponseWrite
 
 //OTP+++++++++++++OTP//
 
+// Gen Otp and hash otp
 func GenOTP(registerInfo *models.PreusersMongo, counter uint64, otpDigits int, w http.ResponseWriter, otpChan chan models.OtpGenerate, wg *sync.WaitGroup) chan models.OtpGenerate {
 
-	serectBase32 := base32.StdEncoding.EncodeToString([]byte(serect + registerInfo.Username + registerInfo.Email))
+	serectBase32 := base32.StdEncoding.EncodeToString([]byte(serect + registerInfo.UUID + registerInfo.Email))
 	passCode, err := hotp.GenerateCodeCustom(serectBase32, counter, hotp.ValidateOpts{
 		Digits:    otp.Digits(otpDigits),
 		Algorithm: otp.AlgorithmSHA256,
@@ -110,4 +111,28 @@ func GenOTP(registerInfo *models.PreusersMongo, counter uint64, otpDigits int, w
 	wg.Done()
 	return otpChan
 
+}
+
+//Decrypt OTP and verify otp
+
+//task
+//decrypt hack otp in redis //testing current
+//verify otp //testing current
+//write preuser to real user db
+//reposne and countinue
+
+func VerifyOTP(otpInfo *models.OTPVerify, redisOTP models.RedisOTP, w http.ResponseWriter) bool {
+	serectBase32 := base32.StdEncoding.EncodeToString([]byte(serect + otpInfo.UUID + otpInfo.Email))
+
+	isOTPMatch, _ := hotp.ValidateCustom(otpInfo.OTP, redisOTP.Counter, serectBase32, hotp.ValidateOpts{
+		Digits:    otp.Digits(6),
+		Algorithm: otp.AlgorithmSHA256,
+	})
+
+	if isOTPMatch != true {
+		fmt.Println("Internal log: OTP is not match")
+		_ = WriteJSON(w, http.StatusBadRequest, "OTP is not match")
+	}
+	fmt.Println("isOTPMatch: ", isOTPMatch)
+	return isOTPMatch
 }

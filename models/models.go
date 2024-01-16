@@ -13,6 +13,7 @@ import (
 type PreusersMongo struct {
 	ID              primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
 	Username        string             `bson:"username" json:"username" `
+	UUID            string             `bson:"uuid" json:"uuid"`
 	Email           string             `bson:"email" json:"email"`
 	HashPassword    string             `bson:"hash_password" json:"hash_password"`
 	PhoneNumber     string             `bson:"phone_number" json:"phone_number"`
@@ -38,6 +39,7 @@ var Validate *validator.Validate
 // API Type
 type CreateUser struct {
 	Username        string `json:"username" validate:"required,min=8,max=20"`
+	UUID            string `json:"uuid" validate:"required,uuid"`
 	Email           string `json:"email" validate:"required,email"`
 	Password        string `json:"password" validate:"required,min=8,max=20,customPassword"`
 	ConfirmPassword string `json:"confirm_password" validate:"required,eqfield=Password"`
@@ -102,5 +104,12 @@ type RedisOTP struct {
 	Email       string `json:"email"`
 	User        string `json:"user"`
 	CreatedDate int64  `json:"created_date"`
+	Counter     uint64 `json:"counter"`
 	HashOTP     string `json:"hashOTP"`
+}
+
+type OTPVerify struct {
+	OTP   string `json:"otp"`
+	Email string `json:"email"`
+	UUID  string `json:"uuid"`
 }

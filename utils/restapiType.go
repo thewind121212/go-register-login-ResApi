@@ -8,6 +8,7 @@ import (
 
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(status)
 	err := json.NewEncoder(w).Encode(v)
 	if err != nil {
