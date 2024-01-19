@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/go-mail/mail"
 	"github.com/go-playground/validator/v10"
@@ -21,49 +20,48 @@ import (
 	"time"
 )
 
-type ResponseError struct {
-	Code int
-	Err  error
-}
-
 // CheckAndValidRegisterFiled Check the user register field is valid or not
-func CheckAndValidRegisterFiled(registerData *models.CreateUser) (bool, *ResponseError) {
+func CheckAndValidRegisterFiled(registerData *models.CreateUser) (bool, *models.ResponseError) {
 	_ = models.Validate.RegisterValidation("customPassword", models.PasswordValidator)
 	errs := models.Validate.Struct(registerData)
-	var errStack []string
+	type errStack []string
+	errorAPI := models.ErrorAPI{
+		Errors:  make([]string, 0),
+		Message: "Error in input data please check again",
+		Type:    "InvalidInput",
+	}
 	if errs != nil {
 		for _, err := range errs.(validator.ValidationErrors) {
 			switch err.Field() {
 			case "Email":
 				{
 					fmt.Println("Internal Log: Email không hợp lệ")
-					errStack = append(errStack, "Email")
+					errorAPI.Errors = append(errorAPI.Errors, "Email")
 				}
 			case "Username":
 				{
 					fmt.Println("Internal Log: User không hợp lệ")
-					errStack = append(errStack, "User")
+					errorAPI.Errors = append(errorAPI.Errors, "User")
 				}
 			case "Password":
 				{
 					fmt.Println("Internal Log: Password không hợp lệ")
-					errStack = append(errStack, "Password")
+					errorAPI.Errors = append(errorAPI.Errors, "Password")
 				}
 			case "ConfirmPassword":
 				{
 					fmt.Println("Internal Log: Nhập lại mật khẩu sai")
-					errStack = append(errStack, "ConfirmPassword")
+					errorAPI.Errors = append(errorAPI.Errors, "ConfirmPassword")
 				}
 			case "PhoneNumber":
 				{
 					fmt.Println("Internal Log: SĐT không hợp lệ")
-					errStack = append(errStack, "PhoneNumber")
+					errorAPI.Errors = append(errorAPI.Errors, "PhoneNumber")
 				}
 			}
 		}
 		//handle repose error
-		jsonData, _ := json.Marshal(errStack)
-		return false, &ResponseError{Code: http.StatusBadRequest, Err: errors.New(string(jsonData))}
+		return false, &models.ResponseError{Code: http.StatusTooManyRequests, Err: errorAPI}
 	}
 
 	return true, nil
@@ -71,10 +69,10 @@ func CheckAndValidRegisterFiled(registerData *models.CreateUser) (bool, *Respons
 }
 
 // CheckAccountExist Checking in db is user input same data in
-func CheckAccountValid(userName string, email string) (bool, *ResponseError) {
+func CheckAccountValid(userName string, email string) (bool, *models.ResponseError) {
 	//filter in mongodb
 	var isValid bool
-	var errAPI *ResponseError
+	var errAPI *models.ResponseError
 	var dataRedisRetrive models.RedisOTP
 
 	filter := bson.D{
@@ -91,9 +89,13 @@ func CheckAccountValid(userName string, email string) (bool, *ResponseError) {
 	} else {
 		fmt.Println("Internal Log: Email or username already had register")
 		isValid = false
-		errAPI = &ResponseError{
+		errAPI = &models.ResponseError{
 			Code: http.StatusBadRequest,
-			Err:  errors.New("your username or email had been register before"),
+			Err: models.ErrorAPI{
+				Errors:  []string{"Account existed"},
+				Message: "Email or username already had register",
+				Type:    "AccountExisted",
+			},
 		}
 	}
 	retrievedValue, err := utils.Redis.Get(context.Background(), "otp:"+email).Result()
@@ -107,9 +109,13 @@ func CheckAccountValid(userName string, email string) (bool, *ResponseError) {
 	if timeDiff < 30 {
 		isValid = false
 		fmt.Println("Internal Log: Rate limit send verify mail")
-		errAPI = &ResponseError{
+		errAPI = &models.ResponseError{
 			Code: http.StatusBadRequest,
-			Err:  errors.New("wait " + strconv.FormatInt(30-timeDiff, 10) + " to send verify mail again"),
+			Err: models.ErrorAPI{
+				Errors:  []string{"Rate limit send verify mail"},
+				Message: "wait " + strconv.FormatInt(30-timeDiff, 10) + " to send verify mail again",
+				Type:    "RateLimit",
+			},
 		}
 
 	}
@@ -139,7 +145,9 @@ func GenerateVerifyAccount(registerInfo *models.PreusersMongo, w http.ResponseWr
 	go writeOTPInRedis(counter, registerInfo, otpChannel, w)
 
 	wg.Wait()
-	err := utils.WriteJSON(w, http.StatusOK, "Success register account please verify your account")
+	err := utils.WriteJSON(w, http.StatusOK, models.SuccessAPI{
+		Message: "Success register account please verify your account",
+	})
 	return err
 
 }
@@ -258,7 +266,7 @@ func CreateUserAfterVerify(otpInfo *models.OTPVerify, redis *models.RedisOTP, w 
 
 	if err != nil {
 		fmt.Println("Internal log: Can't get preuser data")
-		_ = utils.WriteJSONInternalError(w, "Please register again")
+		//_ = utils.WriteJSONInternalError(w, "Please register again")
 		isValid = false
 	}
 
@@ -277,13 +285,16 @@ func CreateUserAfterVerify(otpInfo *models.OTPVerify, redis *models.RedisOTP, w 
 
 	if err != nil {
 		fmt.Println("Internal log: Can't insert user data")
-		_ = utils.WriteJSONInternalError(w, "Can't insert user data")
+		//_ = utils.WriteJSONInternalError(w, "Can't insert user data")
 		isValid = false
 	}
 
 	if isValid == true {
 		fmt.Println("Internal log: Success verify account")
-		_ = utils.WriteJSON(w, http.StatusOK, "Success verify account")
+		_ = utils.WriteJSON(w, http.StatusOK, models.SuccessAPI{
+			Message: "Success verify account",
+			Type:    "SuccessVerify",
+		})
 	}
 
 	return isValid
@@ -300,7 +311,11 @@ func CheckUserVerify(otpInfo *models.OTPVerify, w http.ResponseWriter) bool {
 
 	if user.Active == true {
 		fmt.Println("Internal log: Account already verify")
-		_ = utils.WriteJSON(w, http.StatusBadRequest, "Account already verify")
+		_ = utils.WriteJSON(w, http.StatusBadRequest, models.ErrorAPI{
+			Errors:  []string{"Account already verify"},
+			Message: "Account already verify",
+			Type:    "AccountAlreadyVerify",
+		})
 		isVerified = true
 	}
 
@@ -317,7 +332,11 @@ func CheckOTPIsValid(otpInfo *models.OTPVerify, w http.ResponseWriter) bool {
 	value, err := utils.Redis.Get(context.Background(), "otp:"+otpInfo.Email).Result()
 	if err != nil {
 		fmt.Println("Internal log: Email not valid")
-		_ = utils.WriteJSON(w, http.StatusBadRequest, "Email is not valid")
+		_ = utils.WriteJSON(w, http.StatusBadRequest, models.ErrorAPI{
+			Errors:  []string{"Email not valid"},
+			Message: "Email not valid",
+			Type:    "EmailNotValid",
+		})
 		isValid = false
 		return false
 	}
@@ -326,7 +345,11 @@ func CheckOTPIsValid(otpInfo *models.OTPVerify, w http.ResponseWriter) bool {
 	_, err = uuid.Parse(otpInfo.UUID)
 	if err != nil {
 		fmt.Println("Internal log: UUID not valid")
-		_ = utils.WriteJSON(w, http.StatusBadRequest, "UUID not valid")
+		_ = utils.WriteJSON(w, http.StatusBadRequest, models.ErrorAPI{
+			Errors:  []string{"UUID not valid"},
+			Message: "UUID not valid",
+			Type:    "UUIDNotValid",
+		})
 		isValid = false
 	}
 

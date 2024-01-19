@@ -113,3 +113,20 @@ type OTPVerify struct {
 	Email string `json:"email"`
 	UUID  string `json:"uuid"`
 }
+
+// API
+type ResponseError struct {
+	Code int
+	Err  any
+}
+
+type ErrorAPI struct {
+	Errors  []string `json:"errors"`
+	Message string   `json:"message"`
+	Type    string   `json:"type"`
+}
+
+type SuccessAPI struct {
+	Message string `json:"message"`
+	Type    string `json:"type"`
+}

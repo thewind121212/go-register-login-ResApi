@@ -131,7 +131,11 @@ func VerifyOTP(otpInfo *models.OTPVerify, redisOTP models.RedisOTP, w http.Respo
 
 	if isOTPMatch != true {
 		fmt.Println("Internal log: OTP is not match")
-		_ = WriteJSON(w, http.StatusBadRequest, "OTP is not match")
+		_ = WriteJSON(w, http.StatusBadRequest, models.ErrorAPI{
+			Errors:  []string{"OTP is not match"},
+			Message: "OTP is not match",
+			Type:    "OTP",
+		})
 	}
 	fmt.Println("isOTPMatch: ", isOTPMatch)
 	return isOTPMatch

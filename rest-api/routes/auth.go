@@ -23,7 +23,7 @@ func RegisterNewAccount(w http.ResponseWriter, r *http.Request) error {
 		//[fairy ok]
 
 		if responseAPI != nil {
-			return utils.WriteJSON(w, responseAPI.Code, responseAPI.Err.Error())
+			return utils.WriteJSON(w, responseAPI.Code, responseAPI.Err)
 		}
 
 		fmt.Println(validRegisterInfo)
@@ -35,7 +35,7 @@ func RegisterNewAccount(w http.ResponseWriter, r *http.Request) error {
 		fmt.Println(isValidData)
 
 		if isValidData != true {
-			return utils.WriteJSON(w, responseAPI.Code, responseAPI.Err.Error())
+			return utils.WriteJSON(w, responseAPI.Code, responseAPI.Err)
 		}
 
 		preUserData := &models.PreusersMongo{
