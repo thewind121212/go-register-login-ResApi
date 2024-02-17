@@ -17,6 +17,8 @@ func BuildEmail(otp string, mailLink string, fileName string) string {
 		QrCode:          qrcodeURL,
 	}
 
+	fmt.Println(data.AlternativeLink)
+
 	//tmpl, err := template.ParseFiles("./Template/email.html")
 	tmpl, err := template.ParseFiles("./Template/email.html")
 

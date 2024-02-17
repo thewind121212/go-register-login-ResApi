@@ -126,8 +126,7 @@ func CheckAccountValid(userName string, email string) (bool, *models.ResponseErr
 // GeneratorOtp Generate OTP Verify Link and Qr Link
 
 const (
-	otpDigits     = 6
-	mailValidTime = time.Minute * 15
+	otpDigits = 6
 )
 
 func GenerateVerifyAccount(registerInfo *models.PreusersMongo, w http.ResponseWriter) error {
@@ -136,11 +135,11 @@ func GenerateVerifyAccount(registerInfo *models.PreusersMongo, w http.ResponseWr
 	otpChannel := make(chan models.OtpGenerate, 1)
 	mailChannel := make(chan models.MailVefiry, 1)
 
-	counter := CheckAndWritePreuser(registerInfo, w)
+	counter, timerCreate := CheckAndWritePreuser(registerInfo, w)
 	wg.Add(1)
 	go utils.GenOTP(registerInfo, counter, otpDigits, w, otpChannel, &wg)
 	wg.Add(1)
-	go utils.EncryptAESMailLink(registerInfo, w, mailChannel, &wg)
+	go utils.EncryptAESMailLink(registerInfo, w, mailChannel, &wg, timerCreate)
 	go createMailVerify(registerInfo, otpChannel, mailChannel, w)
 	go writeOTPInRedis(counter, registerInfo, otpChannel, w)
 
@@ -166,7 +165,7 @@ func createMailVerify(registerInfo *models.PreusersMongo, otpChan chan models.Ot
 	}
 
 	qrFileName := registerInfo.Email + registerInfo.Username + ".png"
-	os.WriteFile("./temp/"+qrFileName, decodedImage, 0666)
+	_ = os.WriteFile("./temp/"+qrFileName, decodedImage, 0666)
 	emailBody := utils.BuildEmail(opt.PureOTP, mailVerify.LinkMail, qrFileName)
 
 	m.SetHeader("From", "admin@wliafdew.dev")
@@ -186,12 +185,15 @@ func createMailVerify(registerInfo *models.PreusersMongo, otpChan chan models.Ot
 	}
 
 	defer func() {
-		os.Remove("./temp/" + qrFileName)
+		_ = os.Remove("./temp/" + qrFileName)
 	}()
 }
 
 // check and write pre use into mongo db
-func CheckAndWritePreuser(registerInfo *models.PreusersMongo, w http.ResponseWriter) uint64 {
+func CheckAndWritePreuser(registerInfo *models.PreusersMongo, w http.ResponseWriter) (uint64, time.Time) {
+	//generate timestamp
+	timeCreate := time.Now()
+	registerInfo.CreatedDate = timeCreate
 	//checking
 	email := registerInfo.Email
 	count := 1
@@ -200,8 +202,8 @@ func CheckAndWritePreuser(registerInfo *models.PreusersMongo, w http.ResponseWri
 	if err != nil {
 		hashed, err := bcrypt.GenerateFromPassword([]byte(registerInfo.HashPassword), 10)
 		if err != nil {
-			fmt.Println("Internal Log :Fail to create OTP")
-			_ = utils.WriteJSONInternalError(w, "Fail to create OTP")
+			fmt.Println("Internal Log :Fail to hash password")
+			_ = utils.WriteJSONInternalError(w, "Fail to hash password")
 		}
 		registerInfo.HashPassword = string(hashed)
 		_, err = utils.PreUserData.InsertOne(context.Background(), registerInfo)
@@ -209,14 +211,14 @@ func CheckAndWritePreuser(registerInfo *models.PreusersMongo, w http.ResponseWri
 			fmt.Println("Internal Log: Can't Insert Data To PreUser")
 			_ = utils.WriteJSONInternalError(w, "Can't Insert Data To PreUser")
 		}
-		return uint64(count)
+		return uint64(count), timeCreate
 	} else {
 		update := bson.D{
 			{"$inc", bson.D{
 				{"verify_sent_count", 1},
 			}},
 			{"$set", bson.D{
-				{"update_date", time.Now()},
+				{"update_date", timeCreate},
 			},
 			}}
 
@@ -227,7 +229,7 @@ func CheckAndWritePreuser(registerInfo *models.PreusersMongo, w http.ResponseWri
 		}
 		fmt.Println()
 		count = int(raw.Lookup("verify_sent_count").Int32() + 1)
-		return uint64(count)
+		return uint64(count), timeCreate
 	}
 
 }
@@ -258,10 +260,10 @@ func writeOTPInRedis(counter uint64, registerInfo *models.PreusersMongo, otpChan
 }
 
 // ////////////////////////Create User Complete//////////////////////////
-func CreateUserAfterVerify(otpInfo *models.OTPVerify, redis *models.RedisOTP, w http.ResponseWriter) bool {
+func CreateUserAfterVerify(email string, w http.ResponseWriter) bool {
 	isValid := true
 	var preUserData models.PreusersMongo
-	filter := bson.D{{"email", otpInfo.Email}}
+	filter := bson.D{{"email", email}}
 	err := utils.PreUserData.FindOne(context.Background(), filter).Decode(&preUserData)
 
 	if err != nil {
@@ -278,7 +280,7 @@ func CreateUserAfterVerify(otpInfo *models.OTPVerify, redis *models.RedisOTP, w 
 		Active:          true,
 		CreatedDate:     time.Now(),
 		UpdateDate:      time.Now(),
-		VerifySentCount: int(redis.Counter),
+		VerifySentCount: preUserData.VerifySentCount,
 	}
 
 	_, err = utils.User.InsertOne(context.Background(), user)
@@ -303,9 +305,9 @@ func CreateUserAfterVerify(otpInfo *models.OTPVerify, redis *models.RedisOTP, w 
 
 //////////////////////////Verify OTP//////////////////////////
 
-func CheckUserVerify(otpInfo *models.OTPVerify, w http.ResponseWriter) bool {
+func CheckUserVerify(email string, w http.ResponseWriter) bool {
 	isVerified := false
-	filter := bson.D{{"email", otpInfo.Email}}
+	filter := bson.D{{"email", email}}
 	var user models.UsersMongo
 	_ = utils.User.FindOne(context.Background(), filter).Decode(&user)
 
@@ -353,14 +355,31 @@ func CheckOTPIsValid(otpInfo *models.OTPVerify, w http.ResponseWriter) bool {
 		isValid = false
 	}
 
-	if isVerified := CheckUserVerify(otpInfo, w); isVerified == true {
+	if isVerified := CheckUserVerify(otpInfo.Email, w); isVerified == true {
 		return false
 	}
 
 	isValid = utils.VerifyOTP(otpInfo, dataRedis, w)
 
 	if isValid == true {
-		CreateUserAfterVerify(otpInfo, &dataRedis, w)
+		CreateUserAfterVerify(otpInfo.Email, w)
+	}
+	return true
+}
+
+//////////////////////////Verify JWT//////////////////////////
+
+func VerifyWithJWT(email string, w http.ResponseWriter) bool {
+	var isValid bool
+	isValid = true
+	//verify uuid and email
+
+	if isVerified := CheckUserVerify(email, w); isVerified == true {
+		return false
+	}
+
+	if isValid == true {
+		CreateUserAfterVerify(email, w)
 	}
 	return true
 }

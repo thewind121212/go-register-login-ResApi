@@ -3,6 +3,7 @@ package routes
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"linhdevtran99/rest-api/models"
 	"linhdevtran99/rest-api/rest-api/services"
@@ -75,8 +76,34 @@ func VerifyWithOTP(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+func VerifyWithJWT(w http.ResponseWriter, r *http.Request) error {
+	fmt.Println("hello")
+	if r.Method == http.MethodPost {
+		var jwtInfo models.LinkVerify
+		_ = json.NewDecoder(r.Body).Decode(&jwtInfo)
+		_, err := uuid.Parse(jwtInfo.UUID)
+		//checking uuid
+		if err != nil {
+			fmt.Println("Internal log: UUID not valid")
+			_ = utils.WriteJSON(w, http.StatusBadRequest, models.ErrorAPI{
+				Errors:  []string{"UUID not valid"},
+				Message: "UUID not valid",
+				Type:    "UUIDNotValid",
+			})
+			return err
+		}
+		//call function check jwt
+		isValid, email := utils.DecryptAESMailLink(&jwtInfo, w)
+
+		if isValid == true {
+			services.VerifyWithJWT(email, w)
+		}
+	}
+	return nil
+}
 func AuthRouterSetup(router *mux.Router) {
 	authRouter := router.PathPrefix("/account").Subrouter()
 	authRouter.Handle("/register", utils.MakeHTTPHandlerFn(RegisterNewAccount)).Methods("POST")
 	authRouter.Handle("/register/verifyAccountOTP", utils.MakeHTTPHandlerFn(VerifyWithOTP)).Methods("POST")
+	authRouter.Handle("/register/verifyAccountJWT", utils.MakeHTTPHandlerFn(VerifyWithJWT)).Methods("POST")
 }

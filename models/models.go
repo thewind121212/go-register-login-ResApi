@@ -130,3 +130,8 @@ type SuccessAPI struct {
 	Message string `json:"message"`
 	Type    string `json:"type"`
 }
+
+type LinkVerify struct {
+	JWT  string `json:"jwt"`
+	UUID string `json:"uuid"`
+}
